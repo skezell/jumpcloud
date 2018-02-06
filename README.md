@@ -33,12 +33,12 @@ General Information
 
 + I selected test cases in the order I would prioritize without any additional information about requirements or risk.
 Generally, one or two happy path scenarios to validate general functionality followed by edge cases and then one 
-complex scenario that represents a more likely real world scenario.
+complex scenario that represents a more likely real world scenario. 
 
 + I prefer to have the automated tests serve as the documentation for the test cases if at all possible to reduce the
 work involved in keeping the documentation up to date. For that reason, the tests are written in Cucumber.
 
-+ Since I only worked on this assignment for a few hours, it's most definitely incomplete. Of note, if this was a 
++ Since I only worked on this assignment for a about 6 hours, it's most definitely incomplete. Of note, if this was a 
 production service I would likely include
 
     + Load/Performance/Stress testing
@@ -65,7 +65,7 @@ selecting the test cases and might possibly affect the test cases as written, we
     + Requirements for graceful shutdown don't specify which actions should be rejected during shutdown - submitting
     a new job AND requesting a previously calculated hash value OR just submitting new jobs
     + The requirements don't state this, but assuming you can request the hash value for a jobid multiple times? Is
-    there a lifetime for this information?
+    there a lifetime for this information (before the service is shutdown, which clears memory, I'd presume)?
     
 + Additionally, if I were testing this service for real I'd likely ask the development team about the feasibility of
 adding some additional (non public) functionality to make the service more testable:

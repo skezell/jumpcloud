@@ -57,8 +57,8 @@ Feature: Hash Service
     Then the hash for job random and response random-hash should match
     And the service status is true
 
-  #undone: should research sha512 information to determine a more realistic upper limit, I'm sure it's way bigger
-  #than 10000
+  #UNDONE: should research sha512 information to determine a more realistic upper limit, I'm sure it's way bigger
+  #than 10000...
   @service-auto-start @slow
   Scenario: Request hash value for a very big password
     When  I submit a job with a random password of length 10000 with id bigrandom
@@ -88,7 +88,16 @@ Feature: Hash Service
 
   @service-auto-start
   Scenario: INVALID Get hash with invalid jobid (number that doesn't exist as a job id yet)
-    When I request the hash value for a jobid 100000000
+    When I request the hash value for a jobid 100000
+    Then the last response should be 400
+    And the service status is true
+
+
+  #since jobids appear to be sequentially numbered & given the fact that I saw an atoi error message already,
+  #try something that exceeds the integer limit
+  @service-auto-start
+  Scenario: Get hash with very large jobid
+    When I request the hash value for a jobid 2147483648
     Then the last response should be 400
     And the service status is true
 
@@ -148,7 +157,7 @@ Feature: Hash Service
     And I wait 2 seconds
     Then the service status is false
 
-  @service-auto-start @debug
+  @service-auto-start
   Scenario: Graceful shutdown with requests pending
     When I send 100 requests for password hashes with jobid lotsa-shutdown
     And I submit a job for password [angrymonkey] with id last
@@ -158,25 +167,24 @@ Feature: Hash Service
   @service-auto-start
   Scenario: Graceful shutdown with attempt to submit new job
     When I send 1000 requests for password hashes with jobid lotsa
-    And I request the hash value for password [angrymonkey] with id the-last
+    And I submit a job for password [angrymonkey] with id the-last
     When I shutdown the service
-    And I request the hash value for password [angrymonkey] with id angry
+    And I submit a job for password [hello world] with id after
     Then the request should be rejected
-    Then the service should not shutdown until the hash value is available for id the-last
+    And the service should not shutdown until the hash value is available for id the-last
 
   @service-auto-start
   Scenario: Repeated shutdown commands while graceful shutdown is already in progress
     When I send 1000 requests for password hashes with jobid lotsa
-    And I request the hash value for password [angrymonkey] with id the-last
+    And I submit a job for password [goodnight] with id the-last
     When I shutdown the service
     And I shutdown the service
     And I shutdown the service
     Then the service should not shutdown until the hash value is available for id the-last
 
   @service-auto-start
-  Scenario: Get status very large number of requests (so stats might exceed counters)
-    When I send 1000000000 requests for password hashes with jobid lotsa
-    And I request the hash value for all requests submitted
+  Scenario: Get stats very large number of requests (so stats might exceed counters)
+    When I send 2147483648 requests for password hashes with jobid lotsa
     And I request the service stats with id big-stats
     Then the stats with id big-stats should match the expected stats
     And the service status is true
@@ -193,7 +201,14 @@ Feature: Hash Service
     #request some values
     #multiple attempts to submit new jobs
     #check that the last hash is processed
-    #check that after last hash, it shutsdown
+    #check that after last hash, it shuts down
+
+  Scenario: Graceful shutdown with multiple attempts to submit new job
+  Scenario: Invalid route
+  Scenario: Graceful shutdown with GET of stats and hash
+  Scenario: Ensure memory is cleared on shutdown
+  Scenario: Check stats counts - make sure it's counting only job requests, not the other types of requests
+
 
 
 
