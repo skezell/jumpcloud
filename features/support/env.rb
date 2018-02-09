@@ -40,7 +40,7 @@ def setup_random_chars
 end
 
 def empty_bridge()
-  {'stats' => {}, 'jobs' => {}, 'hashes' => {}, 'internal' => {'count' => 0}}
+  {'stats' => {}, 'jobs' => {}, 'hashes' => {}, 'internal' => {'count' => 0, 'times' => []}}
 end
 
 def load_json (file_name)
