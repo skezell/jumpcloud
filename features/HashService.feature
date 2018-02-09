@@ -37,7 +37,7 @@ Feature: Hash Service
   # after clarification with the developer on what should be measured
   Scenario: Happy Path Check timing stats
     Given I fresh start the service
-    And I send 2 requests for password hashes with jobid tenish
+    And I send 10 requests for password hashes with jobid tenish
     When I request the service stats with id stats
     Then the stats with id stats should match the expected stats
     And the average time from stats should match the expected average time
