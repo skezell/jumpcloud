@@ -1,4 +1,5 @@
 {
   "service_base_url":"http://localhost:8088",
-  "service_path": "/Users/suzanneezell/jumpcloud/broken-hashserve/broken-hashserve_darwin"
+  "service_path": "/Users/suzanneezell/jumpcloud/broken-hashserve/broken-hashserve_darwin",
+  "local_service": true
 }
