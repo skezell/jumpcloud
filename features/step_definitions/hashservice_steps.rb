@@ -30,11 +30,20 @@ And(/^the stats with id (.+) should match the expected stats/) do |id|
   assert body['TotalRequests'].to_i == $bridge['internal']['count'], "Total request count does not match expected, actual=#{body['TotalRequests'].to_i}, expected = #{$bridge['internal']['count']}"
   assert body['AverageTime'].to_i >=0, "Average time doesn't make sense #{body['AverageTime'].to_i}"
 
-  puts body
 end
 
 When(/^I submit a job for password \[(.*)\] with id (.*)/) do |password, id|
+  start_time = Time.now
   submit_job(id, password)
+  end_time = Time.now
+  $delta = end_time-start_time
+  puts "Submit job took #{$delta}"
+end
+
+When(/^I submit a password \[(.*)\] and get the corresponding hash value$/) do |pwd|
+  submit_job('tmp', pwd)
+  sleep 3
+  get_hash('tmp', 'tmp-hash')
 end
 
 Then(/^the job response for (.+) should be valid$/) do |id|
@@ -47,6 +56,11 @@ end
 
 When(/^I wait (\d+) seconds$/) do |wait|
   sleep wait.to_i
+end
+
+Then(/^the time for the last request should be between (\d+) and (\d+) seconds$/) do |lower, upper|
+  check = ($delta > lower.to_i) && ($delta < upper.to_i)
+  assert check, "Time not within limits, took #{$delta} seconds"
 end
 
 And(/^request the hash value for id (.+) and save it with id (.+)$/) do |id, newid|
@@ -67,11 +81,12 @@ end
 
 Then(/^the last response should be (\d+)$/) do |code|
   assert $response.code == code.to_i, "HTTP status code is not expected value expected=#{code}, actual=#{$response.code}"
-  if !($response.code == 200)
-    #undone: if the spec included what error messages were returned, it would be better to assert on the message
-    #directly
-    puts "Error message returned, does it seem reasonable? #{$response.body}"
-  end
+end
+
+Then(/^the last response should be (\d+) with message \[(.+)\]$/) do |code, msg|
+  assert $response.code == code.to_i, "HTTP status code is not expected value expected=#{code}, actual=#{$response.code}"
+  assert msg + "\n" == $response.body, "Error message check failed. Expected:[#{msg}], Actual:[#{$response.body}]"
+
 end
 
 When(/^I request a hash value with extra keys in payload with id (.+)$/) do |id|
@@ -117,7 +132,19 @@ end
 
 When(/^I send (\d+) requests for password hashes with jobid (.+)/) do |num, id|
   (1..num.to_i).each do |x|
+    start_time = Time.now
     submit_job("#{id}#{x}","#{id}#{x}")
+    end_time = Time.now
+    $bridge['internal']['times']<< (end_time - start_time)
+    sleep 3
+    get_hash("#{id}#{x}", "#{id}-hash")
+  end
+
+end
+
+When(/^I send (\d+) simultaneous requests for password hashes with jobid (.+)/) do |num, id|
+  (1..num.to_i).each do |x|
+    submit_async_job("#{id}#{x}","#{id}#{x}")
   end
 end
 
@@ -126,6 +153,27 @@ Then(/^the service should not shutdown until the hash value is available for id 
   $response = HTTParty.get("#{$props['service_base_url']}/hash/#{jobid}")
   puts $response.code
   puts $response.body
+end
+
+When(/^I submit a job with the max password with id (.+)/) do |id|
+
+  pwd = "!" * (2**16-1)
+  submit_job(id, pwd)
+end
+
+Given(/^NYI(.*)$/) do |reason|
+  pending reason
+end
+
+And(/^the average time from (.+) should match the expected average time$/) do |id|
+  actual_average = JSON.parse($bridge['stats'][id].body)['AverageTime']
+  count = $bridge['internal']['times'].count
+  sum = $bridge['internal']['times'].inject(0){|sum,x| sum + x }
+  expected_average = (sum/count) * 1000
+
+  margin = 100
+  check = (actual_average >= expected_average - margin) && (actual_average <= expected_average + margin)
+  assert check, "Actual time is not within #{margin} ms of expected. Actual=#{actual_average}, expected=#{expected_average}"
 end
 
 Before ('@service-auto-start') do
@@ -141,12 +189,13 @@ at_exit do
 end
 
 def start_service
+
+  #undone: add check to not start if remote
   #bit of a hack, you'd probably want something more robust for starting the service
   begin
     fork {system("export PORT=8088; #{$props['service_path']}")}
-    #if we actually are starting the service right now, resets our stats object
-    $stats = Hash.new
-    sleep 2     #give it a few seconds to start
+    sleep 2         #wait 2 seconds for service to load undone: should spin until server is up
+    $bridge['internal']['count'] =0
   rescue
     #ignore errors for now, for reals you'd want to do some checking here to see what happened
   end
@@ -180,6 +229,16 @@ def submit_job (id, password)
 
   $bridge['internal']['count'] = $bridge['internal']['count'] + 1
   $bridge['jobs'][id] = {"password" => password, "response" => $response}
+  return $response
+end
+
+def submit_async_job(id, password)
+  #note, assumes password can be put on the commandline (e.g. single word)
+
+  #use a curl request in this case, because it's a simple way to launch async in this case
+  #ruby has a threading model, but it's more involved than this ;)
+  fork {"./submitjob.sh #{$props['service_base_url']} #{password}"}
+  $bridge['internal']['count'] = $bridge['internal']['count'] + 1
 end
 
 def get_hash(id, newid)
