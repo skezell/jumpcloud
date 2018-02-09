@@ -4,7 +4,7 @@ Feature: Hash Service
   #anything tagged with service-auto-stop will stop the service after the steps
   #This is included so that you can have scenarios that need additional control over service lifetime
 
-
+#------------------------------ HAPPY PATH -----------------------------------------------------------------------
   @service-auto-start
   Scenario: Happy Path for hash endpoint POST & GET
     When I submit a job for password [angrymonkey] with id happy
@@ -15,19 +15,42 @@ Feature: Hash Service
     And the service status is true
 
   @service-auto-start
-  Scenario: Happy Path for stats endpoint
+  Scenario: Happy Path for stats endpoint (checks also that ONLY hash posts are being counted)
+    When I submit a password [hello, world] and get the corresponding hash value
+    When I submit a password [Anybody want a peanut?] and get the corresponding hash value
     When I request the service stats with id happy-stats
-    Then the service status is true
     And the stats with id happy-stats should match the expected stats
+    Then the service status is true
 
+  #DEFECT: request is not returning immediately with jobid, it appears to take about 5 sec
+  #5 sec is way too long, but I'd likely check with developer for bounds on what would be 'immediately'
+  #since Ruby/Cucumber have some overhead that might skew looking at response time, I created a shell script
+  #to double check this: ./testtiming.sh
+  @service-auto-start
+  Scenario: Check response time for initial job submittal
+    When I submit a password [hello, world] and get the corresponding hash value
+    Then the time for the last request should be between 0 and 3 seconds
+    Then the service status is true
+
+  #DEFECT: Timing is not matching my timing, which is generally around 5 seconds per POST
+  # As noted in the readme, the spec was a little unclear on what is being measured... more testing is really required
+  # after clarification with the developer on what should be measured
+  Scenario: Happy Path Check timing stats
+    Given I fresh start the service
+    And I send 2 requests for password hashes with jobid tenish
+    When I request the service stats with id stats
+    Then the stats with id stats should match the expected stats
+    And the average time from stats should match the expected average time
+
+#------------------------------ EDGE CASES FOR HASH REQUEST (POST) ----------------------------------------------------
   #DEFECT: I was expecting something in the 400 range to indicate a malformed request
   #instead it returns a 200 and jobid
-  #requesting the hash for the jobid returns a string (for what I am not sure ;)
+  #requesting the hash for the jobid returns a string (for what I am not sure, empty string perhaps ;)
   #does not crash the service, even though it doesn't get to that step
   @service-auto-start
   Scenario: INVALID Hash request missing password key
     When I submit a job with an invalid body with id missing-password
-    Then the last response should be 400
+    Then the last response should be 400 with message [Invalid Request]
     And the service status is true
 
   @service-auto-start
@@ -57,16 +80,26 @@ Feature: Hash Service
     Then the hash for job random and response random-hash should match
     And the service status is true
 
-  #UNDONE: should research sha512 information to determine a more realistic upper limit, I'm sure it's way bigger
-  #than 10000...
+  #Limit for length of message the sha512 algorithm can handle is 2^128-1
+  #Documentation on this algorithm here: https://en.wikipedia.org/wiki/SHA-2
+  #UNDONE: Ruby can't hold a string this big, so we're doing 2^16-1 length for now
+  #and really we should create a curl test that uses a file with the string saved in it
+  #instead of generating it on the fly
   @service-auto-start @slow
   Scenario: Request hash value for a very big password
-    When  I submit a job with a random password of length 10000 with id bigrandom
+    When I submit a job with the max password with id bigrandom
     Then the job response for bigrandom should be valid
     When I wait 10 seconds
     And request the hash value for id bigrandom and save it with id bigrandom-hash
     Then the hash for job bigrandom and response bigrandom-hash should match
     And the service status is true
+
+  #UNDONE: can't implement this test case in Ruby (see previous scenario), included for completeness
+  #should create a curl request similar to the above scenario to cover this test case and
+  #just shell out to that curl request for this scenario
+  @service-auto-start
+  Scenario: Request hash value for password that exceeds limit for SHA512 input
+    Given NYI Can't implement in Ruby, check in another way
 
   @service-auto-start
   Scenario: Request hash value with JSON meaningful characters
@@ -77,37 +110,41 @@ Feature: Hash Service
     Then the hash for job special and response special-hash should match
     And the service status is true
 
-  #POSSIBLE DEFECT: this scenario returns an unexpected message strconv.Atoi: parsing "hash": invalid syntax
-  #I was expecting something about jobid not found, rather than something that is giving information about
-  #what it is expecting for the jobid (both for clarity and for security reasons)
+#------------------------------ EDGE CASES FOR HASH VALUE (GET) ------------------------------------------------------
+  #DEFECT: this scenario returns an unexpected message strconv.Atoi: parsing "hash": invalid syntax
+  #I was expecting something about jobid not found
+  # rather than something that is giving information about what it is expecting for the jobid
+  # (both for clarity and for security reasons)
   @service-auto-start
   Scenario: INVALID Get hash with missing jobid
     When I request the hash value without a jobid
-    Then the last response should be 400
+    Then the last response should be 400 with message [Hash not found]
     And the service status is true
 
   @service-auto-start
   Scenario: INVALID Get hash with invalid jobid (number that doesn't exist as a job id yet)
-    When I request the hash value for a jobid 100000
+    When I request the hash value for a jobid -1
+    Then the last response should be 400
+    When I request the hash value for a jobid 100000000
     Then the last response should be 400
     And the service status is true
 
-
-  #since jobids appear to be sequentially numbered & given the fact that I saw an atoi error message already,
-  #try something that exceeds the integer limit
+  #Since jobids appear to be sequential numbers, check really big number
+  #DEFECT: Expecting 'Hash not found' but got this error message
+  #strconv.Atoi: parsing "1000000000000000000000000000000000000": value out of range
   @service-auto-start
   Scenario: Get hash with very large jobid
-    When I request the hash value for a jobid 2147483648
-    Then the last response should be 400
+    When I request the hash value for a jobid 1000000000000000000000000000000000000
+    Then the last response should be 400 with message [Hash not found]
     And the service status is true
 
-  #POSSIBLE DEFECT: this scenario returns an unexpected message strconv.Atoi: parsing "hash": invalid syntax
-  #I was expecting something about jobid or hash not found, rather than something that is giving information about
+  #DEFECT: this scenario returns an unexpected message strconv.Atoi: parsing "hash": invalid syntax
+  #I was expecting 'Hash not found' rather than something that is giving information about
   #what it is expecting for the jobid (both for clarity and for security reasons)
   @service-auto-start
   Scenario: INVALID Get hash with invalid jobid (alpha)
     When I request the hash value for a jobid a
-    Then the last response should be 400
+    Then the last response should be 400 with message [Hash not found]
     And the service status is true
 
   @service-auto-start
@@ -121,93 +158,124 @@ Feature: Hash Service
     Then the hash for job askagain and response askagain-hash2 should match
     And request the hash value for id askagain and save it with id askagain-hash3
     Then the hash for job askagain and response askagain-hash3 should match
+    When I request the service stats with id stats
+    Then the stats with id stats should match the expected stats
     And the service status is true
 
-  #POSSIBLE DEFECT: as near as I can tell, I can get the hash before the 5 secs have elapsed (see the curl script for
-  #faster execution since cucumber and httparty all have a little overhead) which is not to spec
-  #I was expecting some kind of error code or message that it hadn't calculated yet if I asked for it before the
-  #delay had elapsed
+  #NOTE: this is kind of no-op due to the defect with the service not returning the jobid immediately
+  #the scenario will fail - but it's not testing the thing that is intended, really
   @service-auto-start
   Scenario: Request hash value before 5 seconds (before value is calculated yet)
-    When I submit a job for password [hello world] with id quick
-    And request the hash value for id quick and save it with id quick-hash
-    Then the last response should be 400
+    When I submit a password [infinite monkey cage] and get the corresponding hash value
+    Then the last response should be 400 with message [Hash not ready]
     And the service status is true
 
+#------------------------------ MORE STATS ---------------------------------------------------------
   Scenario: Get stats before any jobs submitted
     Given I fresh start the service
     When I request the service stats with id first-stats
     Then the service status is true
     And the stats should be in the starting state
 
-  #POSSIBLE DEFECT: It appears that it is not returning the jobid immediately and processing the hash calculations
-  #asynchronously. The service appears to process about 10 requests/minute, unexpectedly low.
-  #More investigation, probably not from ruby/cucumber (use curl) just to rule out any overhead the framework introduces
-  # though other tests that I have don't show this level of overhead against REST Api's
-  @service-auto-start
-  Scenario: Get stats with multiple requests pending
-    When I send 10 requests for password hashes with jobid lotsa
-    When I request the service stats with id lotsa-stats
-    Then the service status is true
-    And the stats with id lotsa-stats should match the expected stats
+  #NOTE: I didn't have time to run with the real limit 2147483648, which I picked to exceed the integer limit
+  @service-auto-start @slow
+  Scenario: Get stats very large number of requests (so stats or queue might exceed counters, 2147483648)
+    When I send 1000 requests for password hashes with jobid lotsa
+    And I request the service stats with id big-stats
+    Then the stats with id big-stats should match the expected stats
+    And the service status is true
 
+#------------------------------ GRACEFUL SHUTDOWN ---------------------------------------------------------
   @service-auto-start
   Scenario: Happy Path Graceful shutdown
     When I shutdown the service
     And I wait 2 seconds
     Then the service status is false
 
+  #NOTE: See assumptions about this scenario in the readme
+  #DEFECT: Service is not allowing last request to complete before shutting down
   @service-auto-start
   Scenario: Graceful shutdown with requests pending
-    When I send 100 requests for password hashes with jobid lotsa-shutdown
     And I submit a job for password [angrymonkey] with id last
     And I shutdown the service
-    Then the service should not shutdown until the hash value is available for id last
+    Then request the hash value for id last and save it with id last-hash
+    And the hash for job last and response last-hash should match
+    And the service status is false
 
+  #NOTE: I'm having a hard time getting the service into a state where I can check the service rejects new requests.
+  #This applies to a bunch of these shutdown scenarios. Leaving them all in for completeness, but not really testing
+  #what was intended!
   @service-auto-start
   Scenario: Graceful shutdown with attempt to submit new job
-    When I send 1000 requests for password hashes with jobid lotsa
-    And I submit a job for password [angrymonkey] with id the-last
+    Given I submit a job for password [first] with id first
     When I shutdown the service
-    And I submit a job for password [hello world] with id after
-    Then the request should be rejected
-    And the service should not shutdown until the hash value is available for id the-last
-
+    And I submit a job for password [late again] with id after
+    Then the last response should be 400 with message [No new hash requests accepted]
+    
   @service-auto-start
   Scenario: Repeated shutdown commands while graceful shutdown is already in progress
-    When I send 1000 requests for password hashes with jobid lotsa
-    And I submit a job for password [goodnight] with id the-last
+    Given I submit a job for password [Zachary] with id z
     When I shutdown the service
     And I shutdown the service
     And I shutdown the service
-    Then the service should not shutdown until the hash value is available for id the-last
+    When request the hash value for id z and save it with id z-hash
+    Then the service status is false
+    
+  @service-auto-start
+  Scenario: Graceful shutdown with multiple attempts to submit new job
+    Given I submit a job for password [first] with id first
+    When I shutdown the service
+    And I submit a job for password [late again] with id late
+    Then the last response should be 400 with message [No new hash requests accepted]
+    And I submit a job for password [even later] with id later
+    Then the last response should be 400 with message [No new hash requests accepted]
 
   @service-auto-start
-  Scenario: Get stats very large number of requests (so stats might exceed counters)
-    When I send 2147483648 requests for password hashes with jobid lotsa
-    And I request the service stats with id big-stats
-    Then the stats with id big-stats should match the expected stats
-    And the service status is true
+  Scenario: Graceful shutdown with GET of stats 
+    Given I submit a job for password [first] with id first
+    When I shutdown the service
+    And I request the service stats with id stats
+    Then the stats with id stats should match the expected stats
+
+#------------------------------ COMPLEX USE CASES ---------------------------------------------------------
+  #DEFECT: The service is not behaving correctly with multiple simultaneous requests
+  # at 2 requests, the stats aren't getting updated correctly (current failure)
+  # at 10, a bunch of the requests are getting rejected (see console window)
+  # curl: (7) Failed to connect to 127.0.0.1 port 8088: Connection refused & stats aren't correct
+  @service-auto-start
+  Scenario: Get stats with multiple simultaneous requests
+    When I send 10 simultaneous requests for password hashes with jobid lotsa
+    When I request the service stats with id stats
+    Then the service status is true
+    And the stats with id stats should match the expected stats
 
   @service-auto-start
   Scenario: Complex scenario (many requests over time, periodic checks on the stats, eventually graceful shutdown)
-    #get stats
-    #submit 100 requests and ask for each value back
-    #get stats
-    #submit more requests & check all values (even those above)
-    #submit a bunch to have some pending
-    #shutdown
-    #request stats
-    #request some values
-    #multiple attempts to submit new jobs
-    #check that the last hash is processed
-    #check that after last hash, it shuts down
+    When I request the service stats with id start-stats
+    Then the stats with id start-stats should match the expected stats
+    When I send 5 requests for password hashes with jobid five
+    And I submit a job for password [singleton] with id singleton
+    And I send 3 requests for password hashes with jobid three
+    And I request the hash value for a jobid bogus
+    And request the hash value for id singleton and save it with id singleton-hash
+    Then the hash for job singleton and response singleton-hash should match
+    When I request the service stats with id middle-stats
+    Then the stats with id middle-stats should match the expected stats
+    When I shutdown the service
+    Then the service status is false
 
-  Scenario: Graceful shutdown with multiple attempts to submit new job
-  Scenario: Invalid route
-  Scenario: Graceful shutdown with GET of stats and hash
+  @service-auto-start
   Scenario: Ensure memory is cleared on shutdown
-  Scenario: Check stats counts - make sure it's counting only job requests, not the other types of requests
+    Given I submit a job for password [Joshua] with id j
+    And request the hash value for id j and save it with id j-hash
+    Given I fresh start the service
+    Then the stats should be in the starting state
+    When request the hash value for id j and save it with id j-hash-2
+    Then the last response should be 400 with message [Hash not found]
+
+
+
+
 
 
 
