@@ -40,6 +40,9 @@ OR
 and like it suggests, the results are in features_report.html. You can also run inside an IDE like RubyMine and see the
 graphical results tree.
 
+6. In case you have trouble running for any reason, I've checked in two results html files from my local run (slow and 
+not slow scenarios).
+
 General Information
 ---
 
