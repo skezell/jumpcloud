@@ -137,7 +137,13 @@ When(/^I send (\d+) requests for password hashes with jobid (.+)/) do |num, id|
     end_time = Time.now
     $bridge['internal']['times']<< (end_time - start_time)
     sleep 3
+
+    #just out of curiousity, I added the plumbing to check both types of verbs on the /hash endpoint
+    #commenting them out for now, but leaving in so that we can turn that back if we want
+    #start_time = Time.now
     get_hash("#{id}#{x}", "#{id}-hash")
+    #end_time = Time.now
+    #$bridge['internal']['times']<< (end_time - start_time)
   end
 
 end
