@@ -29,16 +29,16 @@ that bill).
 5. To run all the tests, in the root of the repo run this command
 
 `bundle install && cucumber --tags ~@slow --format html --out features_report.html`  
-(runs everything but slow tests)
-OR
+(runs everything but slow tests)  
+OR  
 `bundle install && cucumber --format html --out features_report.html` 
-(runs everything)
-OR
+(runs everything)  
+OR  
 `bundle install && cucumber --tags @service-auto-start --format html --out features_report.html` 
-(only scenarios that can be run against a remote service, if you start the service manually, without failing)
+(only scenarios that can be run against a remote service, if you start the service manually, without failing)  
 
 and like it suggests, the results are in features_report.html. You can also run inside an IDE like RubyMine and see the
-graphical results tree.
+graphical results tree.  
 
 6. In case you have trouble running for any reason, I've checked in two results html files from my local run (slow and 
 not slow scenarios).
@@ -48,7 +48,7 @@ General Information
 
 + I selected test cases in the order I would prioritize without any additional information about requirements or risk.
 Generally, one or two happy path scenarios to validate general functionality followed by edge cases and then a few 
-complex scenariosw that represents more likely real world scenarios. 
+complex scenarios that represent more likely real world scenarios. 
 
 + I prefer to have the automated tests serve as the documentation for the test cases if at all possible to reduce the
 work involved in keeping the documentation up to date. For that reason, the tests are written in Gherkin (Cucumber
@@ -63,11 +63,20 @@ production service I would likely include
     + Low bandwidth/network disruptions
     + True multiuser scenarios - actually have separate VM's posting requests at the same time
     + Bump up all the numbers, which are set kind of low for speed (e.g. total number of requests)
+    + It was hard to select test cases for the timing piece of the stats without knowing a little more about
+    what was supposed to be timed. At the least, we would want to confirm that the times are capturing every event
+    that we want timed and only those events, timers work for large numbers of requests, simlutaneously requests. The
+    rest of the interesting cases would be covered by stress testing.
     
 + A real automated suite should make use of automated environment setup (often these are tied to a CI/CD system) and 
 employ a more robust logging of results to either the CI/CD system (e.g. with a cucumber Jenkins plugin) or to a custom
-results repository. Helper classes/methods were written to be bare bones and would be way more robust and have more
-abstraction with a real solution.
+results repository.
+
++ Helper classes/methods were written to be bare bones and would be way more robust and have more
+abstraction with a real solution. Additionally, the suite is making use of some globals to pass information between
+steps. You can actually use instance level variables, but the way that Cucumber works this results sometimes in 
+unexpected behavior (Cucumber is actually building a class for you on the fly), so for production level tests I usually
+use globals, but put some plumbing in to constrain how the globals are being accessed.
 
 + Given the stated requirements, I have the following questions that I would likely discuss with the team before
 selecting the test cases and might possibly affect the test cases as written, were this a real testing scenario:
@@ -78,21 +87,24 @@ selecting the test cases and might possibly affect the test cases as written, we
     the service didn't wait for at least one client to get the hash value back, I'm going with the definition of 
     'completion' as the service has sent the actual hash value back (at least once)
     + Is the average processing time using times to process the initial request/return jobid? or the time to calculate
-    the hash for the given password? or both?
+    the hash for the given password? or both? or any /hash endpoint (GET or POST), but not the time to do the hash
+    calculation? assuming not stats on the stats endpoint itself?
     + How many concurrrent users does it need to support? any limits on the number of requests the service can have
     in the queue? limits on the total number of requests between restarts of the service/limits on the stats 
     collection?
     + Requirements for graceful shutdown don't specify which actions should be rejected during shutdown - submitting
-    a new job AND requesting a previously calculated hash value OR just submitting new jobs
+    a new job was listed, but what about stats requests? additional shutdown requests? it also doesn't say 
+    exactly what the rejection should look like, so I'm assuming something in the 400 range along with a message
+    along the lines of shutdown pending or request rejected
     + The requirements don't state this, but assuming you can request the hash value for a jobid multiple times? Is
     there a lifetime for this information (before the service is shutdown, which clears memory, I'd presume)?
     
 + Additionally, if I were testing this service for real I'd likely ask the development team about the feasibility of
 adding some additional (non public) functionality to make the service more testable:
-    + provide a way to reset the stats collection without shutting down the service (shutdown is likely more time
-    consuming than just clearing the counters)
-    + configurable delay for the processing of requests (to make it easier to test concurrency scenarios)
-    + additional information about what jobs are in the queue and have been processed when asking for status
+    + provide a way to reset the stats collection without shutting down the service (for speed of test execution)
+    + configurable delay (as opposed to always 5 sec.)for the processing of requests (to make it easier to test 
+    concurrency scenarios)
+    + additional information about what jobs are in the queue and have been processed (extended stats endpoint?)
     + a way to flush all or part of the stored hash information or queued jobs (again for speed, you can always
     shutdown the service completely)
     
